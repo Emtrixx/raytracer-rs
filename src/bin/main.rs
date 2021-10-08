@@ -1,4 +1,4 @@
-use raytracer::{Sphere, Element, Scene, Color, render};
+use raytracer::{Sphere, Element, Scene, Color, Plane, Light, render};
 use glam::{Vec3};
 
 fn main() {
@@ -31,11 +31,33 @@ fn main() {
             blue: 255.
         }, 
     });
-    let elements = vec![sphere_red, sphere_green, sphere_blue];
+
+    //Plane
+    let plane = Element::Plane(Plane {
+        origin: Vec3::new(0.,-4.,0.),
+        normal: Vec3::new(0.,-1.,0.),
+        color: Color {
+            red: 60.,
+            green: 60.,
+            blue: 60.,
+        }
+    });
+
+    let elements = vec![sphere_red, sphere_green, sphere_blue, plane];
 
     // let spheres = vec![sphere_red, sphere_green, sphere_blue];
 
     // Lights
+
+    let directional = Light {
+        direction: Vec3::new(-0.2, -1., -0.2),
+        intensity: 1.2,
+        color: Color {
+            red: 1.,
+            green: 1.,
+            blue: 1.,
+        }
+    };
 
     // let ambient = Light {
     //     kind: LightKind::Ambient,
@@ -70,8 +92,8 @@ fn main() {
         width: 800,
         height: 600,
         elements,
-        fov: 60.
-        // lights: lights,
+        fov: 60.,
+        light: directional,
     };
 
     let img = render(&scene);

@@ -1,6 +1,17 @@
 use image::{DynamicImage, GenericImage};
 use glam::{Vec3};
 
+//Scene
+pub struct Scene {
+    pub width: u32,
+    pub height: u32,
+    pub fov: f32,
+    pub elements: Vec<Element>,
+    pub light: Light,
+}
+
+
+//Color
 #[derive(Debug, Clone, Copy)]
 pub struct Color {
     pub red: f32,
@@ -8,15 +19,36 @@ pub struct Color {
     pub blue: f32,
 }
 
-
 impl Color {
     pub fn to_rgba(&self) -> image::Rgba<u8> {
         image::Rgba::<u8>([self.red as u8,self.green as u8,self.blue as u8,0])
     }
+    pub fn multiply(&self, color: Color) -> Color {
+        let red = self.red * color.red;
+        let green = self.green * color.green;
+        let blue = self.blue * color.blue;
+        Color {red, green, blue}
+    }
+    pub fn multiply_scalar(&self, scalar: f32) -> Color {
+        Color {
+            red: self.red * scalar,
+            green: self.green * scalar,
+            blue: self.blue * scalar,
+        }
+    }
+    pub fn clamp(self) -> Color {
+        let red = (self.red).min(255.);
+        let green = (self.green).min(255.);
+        let blue = (self.blue).min(255.);
+        Color {red, green, blue}
+    }
 }
 
+
+//Element
 pub trait Intersectable {
     fn intersect(&self, ray: &Ray) -> Option<f32>;
+    fn surface_normal(&self, hit_point: &Vec3) -> Vec3;
 }
 
 pub enum Element {
@@ -31,6 +63,12 @@ impl Intersectable for Element {
             Element::Plane(ref p) => p.intersect(ray),
         }
     }
+    fn surface_normal(&self ,hit_point: &Vec3) -> Vec3 {
+        match *self {
+            Element::Sphere(ref s) => s.surface_normal(hit_point),
+            Element::Plane(ref p) => p.surface_normal(hit_point),
+        }
+    }
 }
 
 impl Element {
@@ -40,8 +78,13 @@ impl Element {
             Element::Plane(ref p) => p.color,
         }
     }
+    pub fn albedo(&self) -> f32 {
+        1.
+    }
 }
 
+
+//Sphere
 #[derive(Debug, Clone, Copy)]
 pub struct Sphere {
     pub center: Vec3,
@@ -78,45 +121,37 @@ impl Intersectable for Sphere {
         let dist = if distance_intersection1 < distance_intersection2 { distance_intersection1 } else { distance_intersection2 };
         Some(dist)
     }
+    fn surface_normal(&self, hit_point: &Vec3) -> Vec3 {
+        (*hit_point - self.center).normalize()
+    }
 }
 
+//Plane
 pub struct Plane {
-    pub point: Vec3,
+    pub origin: Vec3,
     pub normal: Vec3,
     pub color: Color
 }
 
 impl Intersectable for Plane {
     fn intersect(&self, ray: &Ray) -> Option<f32> {
-        Some(3.)
+        let normal = self.normal;
+        let denom = normal.dot(ray.direction);
+        if denom > 1e-6 {
+            let v = self.origin - ray.origin;
+            let distance = v.dot(normal) / denom;
+            if distance >= 0.0 {
+                return Some(distance);
+            }
+        }
+        None
+    }
+    fn surface_normal(&self, _: &Vec3) -> Vec3 {
+        -self.normal
     }
 }
 
-// FROM TUTORIAL MAYBE USELESS
-// pub struct Intersection<'a> {
-//     pub distance: f32,
-//     pub object: &'a Sphere,
-// }
-
-// impl<'a> Intersection<'a> {
-//     pub fn new<'b>(distance: f32, object: &'b Sphere) -> Intersection<'b> {
-//         //
-//     }
-// }
-// impl Scene {
-//     pub fn trace(&self, ray: &Ray) -> Option<Intersection> {
-//         self.spheres
-//     }
-// }
-
-pub struct Scene {
-    pub width: u32,
-    pub height: u32,
-    pub fov: f32,
-    pub elements: Vec<Element>,
-}
-
-
+//Ray
 pub struct Ray {
     pub origin: Vec3,
     pub direction: Vec3,
@@ -136,6 +171,14 @@ impl Ray {
     }
 }
 
+//Light
+pub struct Light {
+    pub direction: Vec3,
+    pub color: Color,
+    pub intensity: f32,
+}
+
+//Functions
 pub fn render(scene: &Scene) -> DynamicImage {
     let mut image = DynamicImage::new_rgb8(scene.width, scene.height);
     let black = image::Rgba::<u8>([0,0,0,0]);
@@ -147,17 +190,35 @@ pub fn render(scene: &Scene) -> DynamicImage {
             let ray = Ray::create_prime(x, y, &scene);
 
             let mut nearest = f32::INFINITY;
-            for sphere in &scene.elements {
-                if let Some(dist) = sphere.intersect(&ray) {
+            for element in &scene.elements {
+                if let Some(dist) = element.intersect(&ray) {
                     if dist < nearest {
+                        //TODO optimize safe intersection as struct to calculate color at the end
                         nearest = dist;
-                        image.put_pixel(x, y, sphere.color().to_rgba());
+                        let color = get_color(scene, &ray, element, nearest);
+                        image.put_pixel(x, y, color.to_rgba());
                     }
                 } 
             }
         };
     };
     image
+}
+
+fn get_color(scene: &Scene, ray: &Ray, element: &Element, distance: f32) -> Color {
+    let hit_point = ray.origin + (ray.direction * distance);
+    let surface_normal = element.surface_normal(&hit_point);
+    let direction_to_light = -scene.light.direction;
+    //Funktioniert weil Vektoren normalized
+    let light_power = surface_normal.dot(direction_to_light) * scene.light.intensity;
+    //TODO Understand formula. Albedo is parameter for how much light is reflected by this element
+    let light_reflected = element.albedo() / std::f32::consts::PI;
+
+    element.color()
+        .multiply(scene.light.color)
+        .multiply_scalar(light_reflected)
+        .multiply_scalar(light_power)
+        .clamp() 
 }
 
 pub fn to_radians(x: f32) -> f32 {
