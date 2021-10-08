@@ -49,9 +49,10 @@ fn main() {
 
     // Lights
 
+    let brightness = 1.5;
     let ambient = Light {
         kind: LightKind::Ambient,
-        intensity: 0.1,
+        intensity: 0.06 * brightness,
         color: Color {
             red: 1.,
             green: 1.,
@@ -61,9 +62,9 @@ fn main() {
 
     let point = Light {
         kind: LightKind::Point {
-            position: Vec3::new(1.,2.,-1.)
+            position: Vec3::new(-6., 7.,-2.5)
         },
-        intensity: 0.2,
+        intensity: 0.8 * brightness,
         color: Color {
             red: 1.,
             green: 1.,
@@ -73,9 +74,9 @@ fn main() {
 
     let directional = Light {
         kind: LightKind::Directional {
-            direction: Vec3::new(-0.2, -1., 0.2),
+            direction: Vec3::new(-0., -1., -0.).normalize(),
         },
-        intensity: 0.15,
+        intensity: 0.58 * brightness,
         color: Color {
             red: 1.,
             green: 1.,
@@ -95,5 +96,5 @@ fn main() {
 
     let img = render(&scene);
 
-    img.save("images/lightning.png").unwrap();
+    img.save("images/shadow_acne.png").unwrap();
 }

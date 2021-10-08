@@ -10,6 +10,26 @@ pub struct Scene {
     pub lights: Vec<Light>,
 }
 
+impl Scene {
+    fn trace(&self, ray: &Ray) -> Option<Intersection> {
+        let mut intersection: Option<Intersection> = None;
+        let mut nearest = f32::INFINITY;
+        for element in &self.elements {
+            if let Some(dist) = element.intersect(ray) {
+                if dist < nearest {
+                    //TODO optimize safe intersection as struct to calculate color at the end
+                    nearest = dist;
+                    intersection = Some(Intersection {
+                        element,
+                        distance: nearest
+                    });
+                }
+            } 
+        }
+        intersection
+    }
+}
+
 
 //Color
 #[derive(Debug, Clone, Copy)]
@@ -216,23 +236,10 @@ pub fn render(scene: &Scene) -> DynamicImage {
             //standard pixel black
             image.put_pixel(x, y, black);
             let ray = Ray::create_prime(x, y, &scene);
-
-            let mut intersection: Option<Intersection> = None;
-            let mut nearest = f32::INFINITY;
-            for element in &scene.elements {
-                if let Some(dist) = element.intersect(&ray) {
-                    if dist < nearest {
-                        //TODO optimize safe intersection as struct to calculate color at the end
-                        nearest = dist;
-                        intersection = Some(Intersection {
-                            element,
-                            distance: nearest
-                        });
-                    }
-                } 
-            }
+            let intersection = scene.trace(&ray);
+            
             if let Some(inter) = intersection {
-                let color = get_color(&scene.lights, &ray, inter);
+                let color = get_color(&scene, &ray, inter);
                 image.put_pixel(x, y, color.to_rgba());
             }
         };
@@ -240,7 +247,7 @@ pub fn render(scene: &Scene) -> DynamicImage {
     image
 }
 
-fn get_color(lights: &Vec<Light>, ray: &Ray, intersection: Intersection) -> Color {
+fn get_color(scene: &Scene, ray: &Ray, intersection: Intersection) -> Color {
     let Intersection { element, distance } = intersection;
     let hit_point = ray.origin + (ray.direction * distance);
     let surface_normal = element.surface_normal(&hit_point);
@@ -248,24 +255,32 @@ fn get_color(lights: &Vec<Light>, ray: &Ray, intersection: Intersection) -> Colo
     let mut color = element.color();
 
     let mut intensity = 0.0;
-    for light in lights {
+    for light in &scene.lights {
         color = color.multiply(light.color);
         match light.kind {
             LightKind::Ambient => { intensity += light.intensity; }
             _ => {
-                let mut impact_vector = Vec3::new(0.,0.,0.);
+                let mut impact_to_light = Vec3::new(0.,0.,0.);
                 match light.kind {
                     LightKind::Point { position } => { 
-                        impact_vector = position - hit_point;
+                        impact_to_light =  (position - hit_point).normalize();
                     },
                     LightKind::Directional { direction } => {
-                        impact_vector = - direction;
+                        impact_to_light = - direction;
                     },
                     _ => {}
                 };
-                let normal_dot_impact = surface_normal.dot(impact_vector);
+                let normal_dot_impact = surface_normal.dot(impact_to_light);
 
-                if normal_dot_impact > 0. {
+                //Shadow
+                let shadow_ray = Ray {
+                    origin: hit_point,
+                    direction: impact_to_light,
+                };
+                let in_light = scene.trace(&shadow_ray).is_none();
+
+
+                if normal_dot_impact > 0. && in_light {
                     // intensity += light.intensity * normal_dot_impact / (surface_normal.dot(surface_normal) * impact_vector.dot(impact_vector));
                     //old version
                     //Funktioniert weil Vektoren normalized
@@ -274,10 +289,9 @@ fn get_color(lights: &Vec<Light>, ray: &Ray, intersection: Intersection) -> Colo
             }
         };
     }
-
+    
     // //TODO Understand formula. Albedo is parameter for how much light is reflected by this element
     let light_reflected = element.albedo() / std::f32::consts::PI;
-
     color
         .multiply_scalar(light_reflected)
         .multiply_scalar(intensity)
