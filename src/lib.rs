@@ -171,6 +171,21 @@ impl Ray {
     }
 }
 
+// Intersection
+struct Intersection<'a> {
+    distance: f32,
+    element: &'a Element,
+}
+
+// impl<'a> Intersection<'a> {
+//     fn new<'b>(distance: f32, element: &'b Element) -> Intersection<'b> {
+//         Intersection {
+//             distance,
+//             element,
+//         }
+//     }
+// }
+
 //Light
 pub struct Light {
     pub direction: Vec3,
@@ -178,7 +193,10 @@ pub struct Light {
     pub intensity: f32,
 }
 
-//Functions
+
+// 
+// FUNCTIONS
+// 
 pub fn render(scene: &Scene) -> DynamicImage {
     let mut image = DynamicImage::new_rgb8(scene.width, scene.height);
     let black = image::Rgba::<u8>([0,0,0,0]);
@@ -189,23 +207,31 @@ pub fn render(scene: &Scene) -> DynamicImage {
             image.put_pixel(x, y, black);
             let ray = Ray::create_prime(x, y, &scene);
 
+            let mut intersection: Option<Intersection> = None;
             let mut nearest = f32::INFINITY;
             for element in &scene.elements {
                 if let Some(dist) = element.intersect(&ray) {
                     if dist < nearest {
                         //TODO optimize safe intersection as struct to calculate color at the end
                         nearest = dist;
-                        let color = get_color(scene, &ray, element, nearest);
-                        image.put_pixel(x, y, color.to_rgba());
+                        intersection = Some(Intersection {
+                            element,
+                            distance: nearest
+                        });
                     }
                 } 
+            }
+            if let Some(inter) = intersection {
+                let color = get_color(scene, &ray, inter);
+                image.put_pixel(x, y, color.to_rgba());
             }
         };
     };
     image
 }
 
-fn get_color(scene: &Scene, ray: &Ray, element: &Element, distance: f32) -> Color {
+fn get_color(scene: &Scene, ray: &Ray, intersection: Intersection) -> Color {
+    let Intersection { element, distance } = intersection;
     let hit_point = ray.origin + (ray.direction * distance);
     let surface_normal = element.surface_normal(&hit_point);
     let direction_to_light = -scene.light.direction;
