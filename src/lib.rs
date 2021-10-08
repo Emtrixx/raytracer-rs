@@ -7,7 +7,7 @@ pub struct Scene {
     pub height: u32,
     pub fov: f32,
     pub elements: Vec<Element>,
-    pub light: Light,
+    pub lights: Vec<Light>,
 }
 
 
@@ -188,9 +188,19 @@ struct Intersection<'a> {
 
 //Light
 pub struct Light {
-    pub direction: Vec3,
+    pub kind: LightKind,
     pub color: Color,
     pub intensity: f32,
+}
+
+pub enum LightKind {
+    Ambient,
+    Point {
+        position: Vec3,
+    },
+    Directional {
+        direction: Vec3,
+    }
 }
 
 
@@ -222,7 +232,7 @@ pub fn render(scene: &Scene) -> DynamicImage {
                 } 
             }
             if let Some(inter) = intersection {
-                let color = get_color(scene, &ray, inter);
+                let color = get_color(&scene.lights, &ray, inter);
                 image.put_pixel(x, y, color.to_rgba());
             }
         };
@@ -230,21 +240,62 @@ pub fn render(scene: &Scene) -> DynamicImage {
     image
 }
 
-fn get_color(scene: &Scene, ray: &Ray, intersection: Intersection) -> Color {
+fn get_color(lights: &Vec<Light>, ray: &Ray, intersection: Intersection) -> Color {
     let Intersection { element, distance } = intersection;
     let hit_point = ray.origin + (ray.direction * distance);
     let surface_normal = element.surface_normal(&hit_point);
-    let direction_to_light = -scene.light.direction;
-    //Funktioniert weil Vektoren normalized
-    let light_power = surface_normal.dot(direction_to_light) * scene.light.intensity;
-    //TODO Understand formula. Albedo is parameter for how much light is reflected by this element
+
+    let mut color = element.color();
+
+    let mut intensity = 0.0;
+    for light in lights {
+        color = color.multiply(light.color);
+        match light.kind {
+            LightKind::Ambient => { intensity += light.intensity; }
+            _ => {
+                let mut impact_vector = Vec3::new(0.,0.,0.);
+                match light.kind {
+                    LightKind::Point { position } => { 
+                        impact_vector = position - hit_point;
+                    },
+                    LightKind::Directional { direction } => {
+                        impact_vector = - direction;
+                    },
+                    _ => {}
+                };
+                let normal_dot_impact = surface_normal.dot(impact_vector);
+
+                if normal_dot_impact > 0. {
+                    // intensity += light.intensity * normal_dot_impact / (surface_normal.dot(surface_normal) * impact_vector.dot(impact_vector));
+                    //old version
+                    //Funktioniert weil Vektoren normalized
+                    intensity += normal_dot_impact * light.intensity;
+                };
+            }
+        };
+    }
+
+    // //TODO Understand formula. Albedo is parameter for how much light is reflected by this element
     let light_reflected = element.albedo() / std::f32::consts::PI;
 
-    element.color()
-        .multiply(scene.light.color)
+    color
         .multiply_scalar(light_reflected)
-        .multiply_scalar(light_power)
-        .clamp() 
+        .multiply_scalar(intensity)
+        .clamp()
+
+
+    // OLD
+    // let direction_to_light = -lights.light.direction;
+    // //Funktioniert weil Vektoren normalized
+    // let light_power = surface_normal.dot(direction_to_light) * lights.light.intensity;
+    // //TODO Understand formula. Albedo is parameter for how much light is reflected by this element
+    // let light_reflected = element.albedo() / std::f32::consts::PI;
+
+    // element.color()
+    //     .multiply(lights.light.color)
+    //     .multiply_scalar(light_reflected)
+    //     .multiply_scalar(light_power)
+    //     .clamp() 
 }
 
 pub fn to_radians(x: f32) -> f32 {

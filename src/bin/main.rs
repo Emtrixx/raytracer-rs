@@ -1,4 +1,4 @@
-use raytracer::{Sphere, Element, Scene, Color, Plane, Light, render};
+use raytracer::{Sphere, Element, Scene, Color, Plane, Light, LightKind, render};
 use glam::{Vec3};
 
 fn main() {
@@ -43,15 +43,15 @@ fn main() {
         }
     });
 
+    // let spheres = vec![sphere_red, sphere_green, sphere_blue];
     let elements = vec![sphere_red, sphere_green, sphere_blue, plane];
 
-    // let spheres = vec![sphere_red, sphere_green, sphere_blue];
 
     // Lights
 
-    let directional = Light {
-        direction: Vec3::new(-0.2, -1., -0.2),
-        intensity: 1.2,
+    let ambient = Light {
+        kind: LightKind::Ambient,
+        intensity: 0.1,
         color: Color {
             red: 1.,
             green: 1.,
@@ -59,44 +59,41 @@ fn main() {
         }
     };
 
-    // let ambient = Light {
-    //     kind: LightKind::Ambient,
-    //     intensity: 0.2,
-    // };
+    let point = Light {
+        kind: LightKind::Point {
+            position: Vec3::new(1.,2.,-1.)
+        },
+        intensity: 0.2,
+        color: Color {
+            red: 1.,
+            green: 1.,
+            blue: 1.,
+        }
+    };
 
-    // let point = Light {
-    //     kind: LightKind::Point {
-    //         position: Point {
-    //             x: 100.,
-    //             y: -300.,
-    //             z: 100.,
-    //         }
-    //     },
-    //     intensity: 0.6
-    // };
+    let directional = Light {
+        kind: LightKind::Directional {
+            direction: Vec3::new(-0.2, -1., 0.2),
+        },
+        intensity: 0.15,
+        color: Color {
+            red: 1.,
+            green: 1.,
+            blue: 1.,
+        }
+    };
 
-    // let directional = Light {
-    //     kind: LightKind::Directional {
-    //         direction: Point {
-    //             x: 100.,
-    //             y: 300.,
-    //             z: 400.,
-    //         }
-    //     },
-    //     intensity: 0.4
-    // };
-
-    // let lights = vec![ambient, directional];
+    let lights = vec![ambient, directional, point];
 
     let scene = Scene {
         width: 800,
         height: 600,
         elements,
         fov: 60.,
-        light: directional,
+        lights,
     };
 
     let img = render(&scene);
 
-    img.save("test.png").unwrap();
+    img.save("images/lightning.png").unwrap();
 }
