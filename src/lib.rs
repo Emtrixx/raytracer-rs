@@ -64,6 +64,12 @@ impl Color {
     }
 }
 
+//Material
+pub struct Material {
+    pub color: Color,
+    pub albedo: f32,
+}
+
 
 //Element
 pub trait Intersectable {
@@ -94,22 +100,24 @@ impl Intersectable for Element {
 impl Element {
     pub fn color(&self) -> Color {
         match *self {
-            Element::Sphere(ref s) => s.color,
-            Element::Plane(ref p) => p.color,
+            Element::Sphere(ref s) => s.material.color,
+            Element::Plane(ref p) => p.material.color,
         }
     }
     pub fn albedo(&self) -> f32 {
-        1.
+        match *self {
+            Element::Sphere(ref s) => s.material.albedo,
+            Element::Plane(ref p) => p.material.albedo,
+        }
     }
 }
 
 
 //Sphere
-#[derive(Debug, Clone, Copy)]
 pub struct Sphere {
     pub center: Vec3,
     pub radius: f32,
-    pub color: Color,
+    pub material: Material,
 }
 
 impl Intersectable for Sphere {
@@ -150,7 +158,7 @@ impl Intersectable for Sphere {
 pub struct Plane {
     pub origin: Vec3,
     pub normal: Vec3,
-    pub color: Color
+    pub material: Material,
 }
 
 impl Intersectable for Plane {
@@ -229,12 +237,12 @@ pub enum LightKind {
 // 
 pub fn render(scene: &Scene) -> DynamicImage {
     let mut image = DynamicImage::new_rgb8(scene.width, scene.height);
-    let black = image::Rgba::<u8>([0,0,0,0]);
+    let background = image::Rgba::<u8>([40,40,60,0]);
 
     for x in 0..scene.width {
         for y in 0..scene.height {
-            //standard pixel black
-            image.put_pixel(x, y, black);
+            //standard pixel background
+            image.put_pixel(x, y, background);
             let ray = Ray::create_prime(x, y, &scene);
             let intersection = scene.trace(&ray);
             
@@ -260,32 +268,49 @@ fn get_color(scene: &Scene, ray: &Ray, intersection: Intersection) -> Color {
         match light.kind {
             LightKind::Ambient => { intensity += light.intensity; }
             _ => {
-                let mut impact_to_light = Vec3::new(0.,0.,0.);
+                let mut light_intensity = light.intensity;
                 match light.kind {
                     LightKind::Point { position } => { 
-                        impact_to_light =  (position - hit_point).normalize();
+                        let mut impact_to_light =  position - hit_point;
+                        let distance_sqared = impact_to_light.dot(impact_to_light);
+                        light_intensity = light_intensity / distance_sqared;
+                        impact_to_light = impact_to_light.normalize();
+
+                        let normal_dot_impact = surface_normal.dot(impact_to_light);
+
+                        //Shadow
+                        let shadow_ray = Ray {
+                            origin: hit_point +  (surface_normal * 1e-4),
+                            direction: impact_to_light,
+                        };
+                        let shadow_intersection = scene.trace(&shadow_ray);
+                        let in_light =  shadow_intersection.is_none() || shadow_intersection.unwrap().distance.powi(2) > distance_sqared;
+
+                        if normal_dot_impact > 0. && in_light {
+                            // intensity += light_intensity * normal_dot_impact / (surface_normal.dot(surface_normal) * impact_vector.dot(impact_vector));
+                            //old version
+                            //Funktioniert weil Vektoren normalized
+                            intensity += normal_dot_impact * light_intensity;
+                        };
                     },
                     LightKind::Directional { direction } => {
-                        impact_to_light = - direction;
+                        let impact_to_light = - direction;
+                        let normal_dot_impact = surface_normal.dot(impact_to_light);
+
+                        //Shadow
+                        let shadow_ray = Ray {
+                            origin: hit_point +  (surface_normal * 1e-4),
+                            direction: impact_to_light,
+                        };
+                        let in_light = scene.trace(&shadow_ray).is_none();
+
+                        if normal_dot_impact > 0. && in_light {
+                            intensity += normal_dot_impact * light_intensity;
+                        };
                     },
                     _ => {}
                 };
-                let normal_dot_impact = surface_normal.dot(impact_to_light);
-
-                //Shadow
-                let shadow_ray = Ray {
-                    origin: hit_point,
-                    direction: impact_to_light,
-                };
-                let in_light = scene.trace(&shadow_ray).is_none();
-
-
-                if normal_dot_impact > 0. && in_light {
-                    // intensity += light.intensity * normal_dot_impact / (surface_normal.dot(surface_normal) * impact_vector.dot(impact_vector));
-                    //old version
-                    //Funktioniert weil Vektoren normalized
-                    intensity += normal_dot_impact * light.intensity;
-                };
+                
             }
         };
     }
