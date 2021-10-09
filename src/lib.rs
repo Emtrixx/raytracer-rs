@@ -17,7 +17,6 @@ impl Scene {
         for element in &self.elements {
             if let Some(dist) = element.intersect(ray) {
                 if dist < nearest {
-                    //TODO optimize safe intersection as struct to calculate color at the end
                     nearest = dist;
                     intersection = Some(Intersection {
                         element,
@@ -42,6 +41,12 @@ pub struct Color {
 impl Color {
     pub fn to_rgba(&self) -> image::Rgba<u8> {
         image::Rgba::<u8>([self.red as u8,self.green as u8,self.blue as u8,0])
+    }
+    pub fn add(&self, color: Color) -> Color {
+        let red = self.red + color.red;
+        let green = self.green + color.green;
+        let blue = self.blue + color.blue;
+        Color {red, green, blue}
     }
     pub fn multiply(&self, color: Color) -> Color {
         let red = self.red * color.red;
@@ -68,6 +73,8 @@ impl Color {
 pub struct Material {
     pub color: Color,
     pub albedo: f32,
+    pub specular: f32,
+    pub reflectivity: f32,
 }
 
 
@@ -108,6 +115,18 @@ impl Element {
         match *self {
             Element::Sphere(ref s) => s.material.albedo,
             Element::Plane(ref p) => p.material.albedo,
+        }
+    }
+    pub fn specular(&self) -> f32 {
+        match *self {
+            Element::Sphere(ref s) => s.material.specular,
+            Element::Plane(ref p) => p.material.specular,
+        }
+    }
+    pub fn reflectivity(&self) -> f32 {
+        match *self {
+            Element::Sphere(ref s) => s.material.reflectivity,
+            Element::Plane(ref p) => p.material.reflectivity,
         }
     }
 }
@@ -238,6 +257,7 @@ pub enum LightKind {
 pub fn render(scene: &Scene) -> DynamicImage {
     let mut image = DynamicImage::new_rgb8(scene.width, scene.height);
     let background = image::Rgba::<u8>([40,40,60,0]);
+    let recursion_depth = 1;
 
     for x in 0..scene.width {
         for y in 0..scene.height {
@@ -247,7 +267,7 @@ pub fn render(scene: &Scene) -> DynamicImage {
             let intersection = scene.trace(&ray);
             
             if let Some(inter) = intersection {
-                let color = get_color(&scene, &ray, inter);
+                let color = get_color(&scene, &ray, inter, recursion_depth);
                 image.put_pixel(x, y, color.to_rgba());
             }
         };
@@ -255,7 +275,7 @@ pub fn render(scene: &Scene) -> DynamicImage {
     image
 }
 
-fn get_color(scene: &Scene, ray: &Ray, intersection: Intersection) -> Color {
+fn get_color(scene: &Scene, ray: &Ray, intersection: Intersection, recursion_depth: u32) -> Color {
     let Intersection { element, distance } = intersection;
     let hit_point = ray.origin + (ray.direction * distance);
     let surface_normal = element.surface_normal(&hit_point);
@@ -265,62 +285,95 @@ fn get_color(scene: &Scene, ray: &Ray, intersection: Intersection) -> Color {
     let mut intensity = 0.0;
     for light in &scene.lights {
         color = color.multiply(light.color);
+        let mut light_intensity = light.intensity;
         match light.kind {
             LightKind::Ambient => { intensity += light.intensity; }
-            _ => {
-                let mut light_intensity = light.intensity;
-                match light.kind {
-                    LightKind::Point { position } => { 
-                        let mut impact_to_light =  position - hit_point;
-                        let distance_sqared = impact_to_light.dot(impact_to_light);
-                        light_intensity = light_intensity / distance_sqared;
-                        impact_to_light = impact_to_light.normalize();
+            LightKind::Point { position } => { 
+                let mut impact_to_light =  position - hit_point;
+                let distance_sqared = impact_to_light.dot(impact_to_light);
+                light_intensity = light_intensity / distance_sqared;
+                impact_to_light = impact_to_light.normalize();
 
-                        let normal_dot_impact = surface_normal.dot(impact_to_light);
+                let normal_dot_impact = surface_normal.dot(impact_to_light);
 
-                        //Shadow
-                        let shadow_ray = Ray {
-                            origin: hit_point +  (surface_normal * 1e-4),
-                            direction: impact_to_light,
-                        };
-                        let shadow_intersection = scene.trace(&shadow_ray);
-                        let in_light =  shadow_intersection.is_none() || shadow_intersection.unwrap().distance.powi(2) > distance_sqared;
-
-                        if normal_dot_impact > 0. && in_light {
-                            // intensity += light_intensity * normal_dot_impact / (surface_normal.dot(surface_normal) * impact_vector.dot(impact_vector));
-                            //old version
-                            //Funktioniert weil Vektoren normalized
-                            intensity += normal_dot_impact * light_intensity;
-                        };
-                    },
-                    LightKind::Directional { direction } => {
-                        let impact_to_light = - direction;
-                        let normal_dot_impact = surface_normal.dot(impact_to_light);
-
-                        //Shadow
-                        let shadow_ray = Ray {
-                            origin: hit_point +  (surface_normal * 1e-4),
-                            direction: impact_to_light,
-                        };
-                        let in_light = scene.trace(&shadow_ray).is_none();
-
-                        if normal_dot_impact > 0. && in_light {
-                            intensity += normal_dot_impact * light_intensity;
-                        };
-                    },
-                    _ => {}
+                //Shadow
+                let shadow_ray = Ray {
+                    origin: hit_point +  (surface_normal * 1e-4),
+                    direction: impact_to_light,
                 };
+                let shadow_intersection = scene.trace(&shadow_ray);
+                let in_light =  shadow_intersection.is_none() || shadow_intersection.unwrap().distance.powi(2) > distance_sqared;
+
+                if normal_dot_impact > 0. && in_light {
+                    // intensity += light_intensity * normal_dot_impact / (surface_normal.dot(surface_normal) * impact_vector.dot(impact_vector));
+                    //old version
+                    //Funktioniert weil Vektoren normalized
+                    intensity += normal_dot_impact * light_intensity;
+                };
+
+                //Specular
+                if element.specular() != -1. {
+                    let light_exit = (2. * surface_normal * impact_to_light.dot(surface_normal) - impact_to_light).normalize();
+                    let resamblence = light_exit.dot(-ray.direction);
+                    if resamblence > 0. {
+                        intensity += light_intensity * (resamblence * resamblence as f32).powf(element.specular());
+                    };
+                }
+
                 
+
+            }
+            LightKind::Directional { direction } => {
+                let impact_to_light = - direction;
+                let normal_dot_impact = surface_normal.dot(impact_to_light);
+
+                //Shadow
+                let shadow_ray = Ray {
+                    origin: hit_point +  (surface_normal * 1e-4),
+                    direction: impact_to_light,
+                };
+                let in_light = scene.trace(&shadow_ray).is_none();
+
+                if normal_dot_impact > 0. && in_light {
+                    intensity += normal_dot_impact * light_intensity;
+                };
+
+                //Specular
+                if element.specular() != -1. {
+                    let light_exit = (2. * surface_normal * impact_to_light.dot(surface_normal) - impact_to_light).normalize();
+                    let resamblence = light_exit.dot(-ray.direction.normalize());
+                    if resamblence > 0. {
+                        intensity += light_intensity * (resamblence * resamblence as f32).powf(element.specular());
+                    };
+                }
             }
         };
     }
-    
-    // //TODO Understand formula. Albedo is parameter for how much light is reflected by this element
     let light_reflected = element.albedo() / std::f32::consts::PI;
-    color
+    color = color
         .multiply_scalar(light_reflected)
         .multiply_scalar(intensity)
-        .clamp()
+        .clamp();
+
+    //Reflection
+    if recursion_depth > 0 {
+        let ray_exit = (2. * surface_normal * ray.direction.dot(surface_normal) - ray.direction).normalize();
+        let ray = Ray {
+            origin: hit_point * (surface_normal * 1e-3),
+            direction: - ray_exit
+        };
+        let intersection = scene.trace(&ray);
+        
+        if let Some(inter) = intersection {
+            let reflection_color = get_color(&scene, &ray, inter, recursion_depth - 1).multiply_scalar(element.reflectivity());
+            color = color.multiply_scalar(1. - element.reflectivity());
+            color = color.add(reflection_color.multiply_scalar(element.reflectivity()));
+        }
+    }
+
+    color
+    
+    // //TODO Understand formula. Albedo is parameter for how much light is reflected by this element
 
 
     // OLD
