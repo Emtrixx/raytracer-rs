@@ -357,9 +357,14 @@ fn get_color(scene: &Scene, ray: &Ray, intersection: Intersection, recursion_dep
 
     //Reflection
     if recursion_depth > 0 {
-        let ray_exit = (2. * surface_normal * ray.direction.dot(surface_normal) - ray.direction).normalize();
+        // let ray_exit = 2. * surface_normal * ray.direction.dot(surface_normal) - ray.direction;
+        let ray_exit = ray.direction - (2. * ray.direction.dot(surface_normal) - surface_normal);
+        // let ray_exit = ray.direction.dot(surface_normal);
+        // let ray_exit = surface_normal - (ra.)
+
+
         let ray = Ray {
-            origin: hit_point * (surface_normal * 1e-3),
+            origin: hit_point * (surface_normal * 1e-5),
             direction: - ray_exit
         };
         let intersection = scene.trace(&ray);
@@ -368,6 +373,15 @@ fn get_color(scene: &Scene, ray: &Ray, intersection: Intersection, recursion_dep
             let reflection_color = get_color(&scene, &ray, inter, recursion_depth - 1).multiply_scalar(element.reflectivity());
             color = color.multiply_scalar(1. - element.reflectivity());
             color = color.add(reflection_color.multiply_scalar(element.reflectivity()));
+        } else {
+            //TODO get background color
+            let background_color = Color {
+                red: 40.,
+                green: 40.,
+                blue: 60.,
+            };
+            color = color.multiply_scalar(1. - element.reflectivity());
+            color = color.add(background_color.multiply_scalar(element.reflectivity()));
         }
     }
 

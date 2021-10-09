@@ -14,7 +14,7 @@ fn main() {
             },
             albedo: 1.,
             specular: 50., 
-            reflectivity: 0.4,
+            reflectivity: 1.,
         }
     });
     let sphere_green = Element::Sphere( Sphere {
@@ -28,7 +28,7 @@ fn main() {
             },
             albedo: 1.,
             specular: 50., 
-            reflectivity: 0.4,
+            reflectivity: 0.,
         } 
     });
     let sphere_blue = Element::Sphere( Sphere {
@@ -42,7 +42,7 @@ fn main() {
             },
             albedo: 1., 
             specular: 10., 
-            reflectivity: 0.4,
+            reflectivity: 1.,
         } 
     });
 
