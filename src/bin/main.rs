@@ -4,7 +4,7 @@ use glam::{Vec3};
 fn main() {
     // Objects
     let sphere_red = Element::Sphere( Sphere {
-        center: Vec3::new(-1.,-1.,-5.5),
+        center: Vec3::new(0.,-0.5,-4.5),
         radius: 1.,
         material: Material {
             color: Color {
@@ -14,11 +14,11 @@ fn main() {
             },
             albedo: 1.,
             specular: 50., 
-            reflectivity: 1.,
+            reflectivity: 0.9,
         }
     });
     let sphere_green = Element::Sphere( Sphere {
-        center: Vec3::new(1.,0.5,-2.6),
+        center: Vec3::new(2.,1.,-2.6),
         radius: 1.,
         material: Material {
             color: Color {
@@ -32,7 +32,7 @@ fn main() {
         } 
     });
     let sphere_blue = Element::Sphere( Sphere {
-        center: Vec3::new(-4.,-2.,-7.5),
+        center: Vec3::new(-3.,-1.,-5.5),
         radius: 1.,
         material: Material {
             color: Color {
@@ -42,7 +42,7 @@ fn main() {
             },
             albedo: 1., 
             specular: 10., 
-            reflectivity: 1.,
+            reflectivity: 0.2,
         } 
     });
 
@@ -58,7 +58,7 @@ fn main() {
             },
             albedo: 1.,
             specular: -1.,
-            reflectivity: 0.1, 
+            reflectivity: 0., 
         }
     });
 
@@ -81,7 +81,7 @@ fn main() {
 
     let point = Light {
         kind: LightKind::Point {
-            position: Vec3::new(-2., -1.,-4.5)
+            position: Vec3::new(-1., -1.,-2.5)
         },
         intensity: 6.2 * brightness,
         color: Color {
@@ -106,14 +106,14 @@ fn main() {
     let lights = vec![ambient, directional, point];
 
     let scene = Scene {
-        width: 800,
-        height: 600,
+        width: 1920,
+        height: 1080,
         elements,
-        fov: 60.,
+        fov: 70.,
         lights,
     };
 
     let img = render(&scene);
 
-    img.save("test.png").unwrap();
+    img.save("images/reflection.png").unwrap();
 }

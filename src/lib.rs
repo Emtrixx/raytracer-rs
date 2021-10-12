@@ -250,6 +250,8 @@ pub enum LightKind {
     }
 }
 
+//Textures
+
 
 // 
 // FUNCTIONS
@@ -257,7 +259,7 @@ pub enum LightKind {
 pub fn render(scene: &Scene) -> DynamicImage {
     let mut image = DynamicImage::new_rgb8(scene.width, scene.height);
     let background = image::Rgba::<u8>([40,40,60,0]);
-    let recursion_depth = 1;
+    let recursion_depth = 3;
 
     for x in 0..scene.width {
         for y in 0..scene.height {
@@ -338,14 +340,7 @@ fn get_color(scene: &Scene, ray: &Ray, intersection: Intersection, recursion_dep
                     intensity += normal_dot_impact * light_intensity;
                 };
 
-                //Specular
-                if element.specular() != -1. {
-                    let light_exit = (2. * surface_normal * impact_to_light.dot(surface_normal) - impact_to_light).normalize();
-                    let resamblence = light_exit.dot(-ray.direction.normalize());
-                    if resamblence > 0. {
-                        intensity += light_intensity * (resamblence * resamblence as f32).powf(element.specular());
-                    };
-                }
+                
             }
         };
     }
@@ -356,16 +351,16 @@ fn get_color(scene: &Scene, ray: &Ray, intersection: Intersection, recursion_dep
         .clamp();
 
     //Reflection
-    if recursion_depth > 0 {
+    if recursion_depth > 0 && element.reflectivity() > 0. {
         // let ray_exit = 2. * surface_normal * ray.direction.dot(surface_normal) - ray.direction;
-        let ray_exit = ray.direction - (2. * ray.direction.dot(surface_normal) - surface_normal);
+        let ray_exit = ray.direction - (2. * ray.direction.dot(surface_normal) * surface_normal);
         // let ray_exit = ray.direction.dot(surface_normal);
         // let ray_exit = surface_normal - (ra.)
 
 
         let ray = Ray {
-            origin: hit_point * (surface_normal * 1e-5),
-            direction: - ray_exit
+            origin: hit_point + (surface_normal * 1e-5),
+            direction:  ray_exit
         };
         let intersection = scene.trace(&ray);
         
