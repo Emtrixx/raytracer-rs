@@ -113,7 +113,11 @@ fn main() {
         lights,
     };
 
-    let img = render(&scene);
+    use std::time::{Instant};
+    let now = Instant::now();
+    // render(scene);
+    let img = render(scene);
 
-    img.save("images/reflection.png").unwrap();
+    println!("{}", now.elapsed().as_millis());
+    img.save("test.png").unwrap();
 }

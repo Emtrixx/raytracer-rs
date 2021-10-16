@@ -1,5 +1,10 @@
 use image::{DynamicImage, GenericImage};
 use glam::{Vec3};
+use threadpool::ThreadPool;
+// mod ThreadPool;
+use std::sync::Arc;
+use std::sync::Mutex;
+
 
 //Scene
 pub struct Scene {
@@ -206,10 +211,10 @@ pub struct Ray {
 
 impl Ray {
     pub fn create_prime(x: u32, y: u32, scene: &Scene) -> Ray {
-        let fov_adjustement = (to_radians(scene.fov) / 2.).tan() ;
+        let fov_adjustment = (to_radians(scene.fov) / 2.).tan() ;
         let aspect_ratio = (scene.width as f32) / (scene.height as f32);
-        let viewport_x = ((((x as f32 + 0.5) / scene.width as f32) * 2.0 - 1.0) * aspect_ratio) * fov_adjustement;
-        let viewport_y = (1.0 - ((y as f32 + 0.5) / scene.height as f32) * 2.0) * fov_adjustement;
+        let viewport_x = ((((x as f32 + 0.5) / scene.width as f32) * 2.0 - 1.0) * aspect_ratio) * fov_adjustment;
+        let viewport_y = (1.0 - ((y as f32 + 0.5) / scene.height as f32) * 2.0) * fov_adjustment;
         
         Ray {
             origin: Vec3::ZERO, 
@@ -256,25 +261,42 @@ pub enum LightKind {
 // 
 // FUNCTIONS
 // 
-pub fn render(scene: &Scene) -> DynamicImage {
-    let mut image = DynamicImage::new_rgb8(scene.width, scene.height);
-    let background = image::Rgba::<u8>([40,40,60,0]);
+pub fn render(scene: Scene) -> DynamicImage  {
+    let image = DynamicImage::new_rgb8(scene.width, scene.height);
+
+    let n_workers = 8;
+    let pool = ThreadPool::new(n_workers);
+
+    let data = Arc::new(Mutex::new(image));
+    let scene = Arc::new(scene);
+
     let recursion_depth = 3;
+    let background = image::Rgba::<u8>([40,40,60,0]);
 
     for x in 0..scene.width {
         for y in 0..scene.height {
             //standard pixel background
-            image.put_pixel(x, y, background);
-            let ray = Ray::create_prime(x, y, &scene);
-            let intersection = scene.trace(&ray);
-            
-            if let Some(inter) = intersection {
-                let color = get_color(&scene, &ray, inter, recursion_depth);
-                image.put_pixel(x, y, color.to_rgba());
-            }
+            let data = Arc::clone(&data);
+            let scene = Arc::clone(&scene);
+
+            pool.execute(move || {
+                // thread_render(x, y, &scene, &mut image);
+                let ray = Ray::create_prime(x, y, &scene);
+                let intersection = scene.trace(&ray);
+
+                let mut image = data.lock().unwrap();
+                if let Some(inter) = intersection {
+                    let color = get_color(&scene, &ray, inter, recursion_depth);
+                    image.put_pixel(x, y, color.to_rgba());
+                } else {
+                    image.put_pixel(x, y, background);
+                }
+            });
         };
     };
-    image
+    pool.join();
+    let image = data.lock().unwrap();
+    image.clone()
 }
 
 fn get_color(scene: &Scene, ray: &Ray, intersection: Intersection, recursion_depth: u32) -> Color {
@@ -288,12 +310,13 @@ fn get_color(scene: &Scene, ray: &Ray, intersection: Intersection, recursion_dep
     for light in &scene.lights {
         color = color.multiply(light.color);
         let mut light_intensity = light.intensity;
+        //TODO refactor duplicate code
         match light.kind {
             LightKind::Ambient => { intensity += light.intensity; }
             LightKind::Point { position } => { 
                 let mut impact_to_light =  position - hit_point;
-                let distance_sqared = impact_to_light.dot(impact_to_light);
-                light_intensity = light_intensity / distance_sqared;
+                let distance_squared = impact_to_light.dot(impact_to_light);
+                light_intensity = light_intensity / distance_squared;
                 impact_to_light = impact_to_light.normalize();
 
                 let normal_dot_impact = surface_normal.dot(impact_to_light);
@@ -304,7 +327,7 @@ fn get_color(scene: &Scene, ray: &Ray, intersection: Intersection, recursion_dep
                     direction: impact_to_light,
                 };
                 let shadow_intersection = scene.trace(&shadow_ray);
-                let in_light =  shadow_intersection.is_none() || shadow_intersection.unwrap().distance.powi(2) > distance_sqared;
+                let in_light =  shadow_intersection.is_none() || shadow_intersection.unwrap().distance.powi(2) > distance_squared;
 
                 if normal_dot_impact > 0. && in_light {
                     // intensity += light_intensity * normal_dot_impact / (surface_normal.dot(surface_normal) * impact_vector.dot(impact_vector));
@@ -316,13 +339,11 @@ fn get_color(scene: &Scene, ray: &Ray, intersection: Intersection, recursion_dep
                 //Specular
                 if element.specular() != -1. {
                     let light_exit = (2. * surface_normal * impact_to_light.dot(surface_normal) - impact_to_light).normalize();
-                    let resamblence = light_exit.dot(-ray.direction);
-                    if resamblence > 0. {
-                        intensity += light_intensity * (resamblence * resamblence as f32).powf(element.specular());
+                    let resemblance = light_exit.dot(-ray.direction);
+                    if resemblance > 0. {
+                        intensity += light_intensity * (resemblance * resemblance as f32).powf(element.specular());
                     };
                 }
-
-                
 
             }
             LightKind::Directional { direction } => {
@@ -381,9 +402,6 @@ fn get_color(scene: &Scene, ray: &Ray, intersection: Intersection, recursion_dep
     }
 
     color
-    
-    // //TODO Understand formula. Albedo is parameter for how much light is reflected by this element
-
 
     // OLD
     // let direction_to_light = -lights.light.direction;
